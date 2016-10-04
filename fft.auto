@@ -1,0 +1,14 @@
+fft.ts<-function(serie, n, delta)
+{
+  #the first part is to obtain the fft on the crude data
+  fft.out<-fft(serie)
+  #now compute the nyquist number
+  nyquist<-floor(length(fft.out)/2)
+  #now compute the magnitude for each harmonic
+  magn<-sqrt(Re(fft.out[1:nyquist])^2+Im(fft.out[1:nyquist])^2)*2/nyquist
+  #now compute the harmonics
+  harmonics<-(n*delta)/(1:nyquist)
+  #plot harmonics versus magnitude
+  plot(harmonics,mag)
+  return(harmonics,magnitude)
+}
