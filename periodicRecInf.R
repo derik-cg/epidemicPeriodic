@@ -13,7 +13,7 @@ source('~/Investigacion/Epidemiology/fft.ts.R')
 source('~/Investigacion/Epidemiology/fft.osc.R')
 
 #define initial conditions
-state<-c(susceptibles=0.4, infected=0.1, recovered=0)
+state<-c(susceptibles=0.4, infected=0.4, recovered=0.4)
 
 #define the vector of output times
 endt<-365*20
@@ -38,6 +38,31 @@ epi<-function(t,state,pars)
          drecovered<- recovery*infected - mu*recovered
          return(list(c(dsusceptibles,dinfected,drecovered)))
        })#this parenthesis closes the with
+}
+#the event function
+eventfunc<-function(t,state,pars)
+  
+{
+  state[1]<-0
+  state[2]<-0
+  state[3]<-0
+  return(state)
+}
+#the root function
+rootfunc<-function(t,state,parms)
+{
+  state[1]
+  state[2]
+  state[3]
+  return(state)
+}
+#wrap the ode function in a tryCatch block
+robustode<-function(state,times,epi,pars,rootfunc,eventfunc)
+{
+  tryCatch(ode(y=state,times=times,func=epi,parms = pars,
+               rootfunc=rootfunc,events=list(func=eventfunc,root=T,
+                                             terminalroot=T)),
+           error=function(e){;NA})
 }
 #here a hypercube for the most important parameters
 #amp1 amp2 p1 p2
@@ -68,33 +93,73 @@ for (a in lim.amp1)
     for (c in lim.p1)
     {
       for (d in lim.p2)
-      {
+      { 
         rw<-rw+1
+        #if(b<0.065) next
         pars$amp1<-a
         pars$amp2<-b
         pars$p1<-c
         pars$p2<-d
+        ####################################
+        #### check with na how does this behaves
+        ####################################
         #do the simulation
-        out<-ode(y=state,times=times,func=epi,parms = pars)
-        osc.out[rw,1:4]<-c(a,b,c,d) #write pars
-        ampl<-c(max(out[(ntimes/2):ntimes,2]),min(out[(ntimes/2):ntimes,2]),
-                max(out[(ntimes/2):ntimes,3]),min(out[(ntimes/2):ntimes,3]),
-                max(out[(ntimes/2):ntimes,4]),min(out[(ntimes/2):ntimes,4]))
-        osc.out[rw,5:10]<-c(ampl)
-        #find the period of the oscillations using a correlogram
-        pers.acf<-c(f.peak(acf(out[(ntimes/2):ntimes,2],lag.max=50,plot=F)),
-                    f.peak(acf(out[(ntimes/2):ntimes,3],lag.max=50,plot=F)),
-                    f.peak(acf(out[(ntimes/2):ntimes,4],lag.max=50,plot=F)))
-        osc.out[rw,11:13]<-pers.acf
-        #find the harmonics and magnitudes of the fft
-        hm.fft<-c(fft.osc(out[(ntimes/2):ntimes,2],nserie,lag),
-                  fft.osc(out[(ntimes/2):ntimes,3],nserie,lag),
-                  fft.osc(out[(ntimes/2):ntimes,2],nserie,lag))
-        osc.out[rw,14:25]
+        out<-robustode(state,times,epi,pars,
+                 rootfunc,eventfunc)
+        if (is.null(out)) out<-NA
+        else if (length(out[,1])<600)
+        {
+          #the simulation is not large enough to generate
+          #oscillations. return NA
+          out<-NA
+        }
+        else if(length(out[,1])<ntimes)
+        {# There was a convergence error, so the simulation
+          #does not end at ntimes, but before.
+          #find time step 600 days before end
+          tpend<-length(out[,1])#end of time period
+          #using a square to find the given time as a 
+          #minimum
+          timemin<-((out[,1]-((out[length(out[,1]),1])-600))^2)
+          tpstart<-which(timemin==min(timemin))
+        }
+        else
+        {
+          tpend<-ntimes #the end time point is the end of simulation
+          tpstart<-ntimes/2
+        }
+        print(rw/n)
+        if (!is.na(out[1])) plot(out)
+        if (!is.na(out[1]))
+        {
+          osc.out[rw,1:4]<-c(a,b,c,d) #write pars
+          ampl<-c(max(out[(tpstart):tpend,2]),min(out[(tpstart):tpend,2]),
+                  max(out[(tpstart):tpend,3]),min(out[(tpstart):tpend,3]),
+                  max(out[(tpstart):tpend,4]),min(out[(tpstart):tpend,4]))
+          osc.out[rw,5:10]<-c(ampl)
+          #find the period of the oscillations using a correlogram
+          pers.acf<-c(f.peak(acf(out[(tpstart):tpend,2],lag.max=100,plot=F)),
+                      f.peak(acf(out[(tpstart):tpend,3],lag.max=100,plot=F)),
+                      f.peak(acf(out[(tpstart):tpend,4],lag.max=100,plot=F)))
+          osc.out[rw,11:13]<-pers.acf
+          #find the harmonics and magnitudes of the fft
+          hm.fft<-c(fft.osc(out[(tpstart):tpend,2],nserie,lag),
+                    fft.osc(out[(tpstart):tpend,3],nserie,lag),
+                    fft.osc(out[(tpstart):tpend,2],nserie,lag))
+          osc.out[rw,14:25]<-hm.fft
+        }
+        else
+        {
+          osc.out[rw,]<-NA
+        }
       }
     }
+    save.image("~/Investigacion/Epidemiology/oscilaciones.RData")
   }
 }
+save.image("~/Investigacion/Epidemiology/oscilaciones.RData")
+osc.out$raw.ampl<-osc.out$max.sus-osc.out$min.sus
+plot(osc.out$amp1,osc.out$amp2)
 # dev.off()
 # #plot(out,ylim=c(0.034,0.05),xlim=c(100,1000))
 # #plot(out,ylim=c(0.034,0.045),xlim=c(60,100))
